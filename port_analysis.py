@@ -8,13 +8,9 @@ Created on Tue Jan 10 14:52:01 2017
 import pandas as pd
 import os 
 import numpy as np
-from datetime import datetime
-import scipy as sp
 import scipy.optimize as scopt
-import scipy.stats as spstats
-import matplotlib.mlab as mlab
 import matplotlib.pyplot as plt
-
+import pandas.io.data as web
 
 def read_data():
     # os.getcwd()
@@ -28,7 +24,23 @@ def calc_annual_returns(daily_returns):
         lambda date: date.year).sum())-1
     return grouped   
     
+def get_historical_closes(ticker, start_date, end_date):
+    # get the data for the tickers. This will be a panel
+    p = web.DataReader(ticker, "yahoo", start_date, end_date)
+    # convert the panel to a DataFrame and selection only Adj Close
+    # while making all index levels columns
+    d = p.to_frame()['Adj Close'].reset_index()
+    # remove the columns
+    d.rename(columns={'minor':'Ticker','Adj Close':'Close'},
+             inplace=True)
+    # pivot each ticker to a column
+    pivoted = d.pivot(index='Date', columns='Ticker')
+    # and drop the one level on the columns
+    pivoted.columns = pivoted.columns.droplevel(0)
+    return pivoted
     
+def calc_daily_returns(closes):
+    return np.log(closes/closes.shift(1))
     
 def calc_portfolio_var(returns, weights=None):
     if weights is None:
@@ -40,13 +52,13 @@ def calc_portfolio_var(returns, weights=None):
 def sharpe_ratio(returns, weights = None, risk_free_rate=0.015):
     n = returns.columns.size
     if weights is None: weights = np.ones(n)/n
-    print('The weight is ' + str(weights))
+    ## print('The weight is ' + str(weights))
     # get the portfolio variance
     var = calc_portfolio_var(returns, weights)
     # and the means of the stocks in the portfolio
     means = returns.mean()
     # and returns the sharpe ratio
-    print('The Sharpe Ratio is ' + str((means.dot(weights)-risk_free_rate)/np.sqrt(var)))
+    ## print('The Sharpe Ratio is ' + str((means.dot(weights)-risk_free_rate)/np.sqrt(var)))
     return (means.dot(weights)-risk_free_rate)/np.sqrt(var)    
     
 def negative_sharpe_ratio(weights, 
@@ -57,7 +69,7 @@ def negative_sharpe_ratio(weights,
     """
     return -sharpe_ratio(returns, weights, risk_free_rate)   
     
-    
+   
 def optimize_portfolio(returns, risk_free_rate):
     """ 
     Performs the optimization
@@ -66,17 +78,19 @@ def optimize_portfolio(returns, risk_free_rate):
     w0 = np.ones(returns.columns.size, 
                  dtype=float) * 1.0 / returns.columns.size
     # minimize the negative sharpe value
-    constraints = ({'type': 'eq', 
-                'fun': lambda w0: w0[0]+w0[1]-0.2})
-    bounds=((0,1),(0,1),(0,1),(0,1),(0,1))
+    constraints = ({'type': 'ineq', 'fun': lambda w0: w0[0]+w0[1]-0.2},
+                   {'type': 'eq', 'fun': lambda w0: 1-np.sum(w0)})
+    bounds=((0.05,0.2),(0.05,0.2),(0.05,0.2),(0.05,0.2),(0.05,0.2),\
+            (0.05,0.2),(0.05,0.2),(0.05,0.2),(0.05,0.2),(0.05,0.2))
     w1 = scopt.minimize(negative_sharpe_ratio, 
                     w0, args=(returns, risk_free_rate),
                     method='SLSQP', constraints = constraints,
                     bounds = bounds).x
-    print('Reach to the last step')
+    print('Reach to the last step: ')
     print('The final w1 is ' + str(w1))
     # and calculate the final, optimized, sharpe ratio
     final_sharpe = sharpe_ratio(returns, w1, risk_free_rate)
+    print('The final Sharpe Ratio is ' + str(final_sharpe))
     return (w1, final_sharpe)    
     
 def objfun(W,R,target_ret):
@@ -98,7 +112,7 @@ def calc_efficient_frontier(returns):
     
     nstocks = returns.columns.size
     
-    for r in np.linspace(min_mean, max_mean, 100):
+    for r in np.linspace(min_mean, max_mean, 200):
         weights = np.ones(nstocks)/nstocks
         bounds = [(0,1) for i in np.arange(nstocks)]
         constraints = ({'type': 'eq', 
@@ -118,16 +132,40 @@ def calc_efficient_frontier(returns):
             'Stds': result_stds, 
             'Weights': result_weights}
             
+           
 def plot_efficient_frontier(frontier_data):
     plt.figure(figsize=(12,8))
     plt.title('Efficient Frontier')
     plt.xlabel('Standard Deviation of the porfolio (Risk))')
     plt.ylabel('Return of the portfolio')
-    plt.plot(frontier_data['Stds'], frontier_data['Means'], '--'); 
+    plt.plot(frontier_data['Stds'], frontier_data['Means'], 'ro'); 
     plt.savefig('5104OS_09_20.png', bbox_inches='tight', dpi=300)
     
 if __name__ == '__main__':    
-    fund_df = read_data()
+    ############ Stock ############
+    # Stock Data
+    closes = get_historical_closes(['AMZN','AAPL','KO','YHOO','GOOG','MSFT','IBM','CSCO','TSM','SAP'], '2008-01-01', '2015-12-31')
+    # calculate daily returns
+    daily_returns = calc_daily_returns(closes)
+    # calculate annual returns
+    annual_returns = calc_annual_returns(daily_returns)
+    
+    
+    # calculate our portfolio variance (equal weighted)
+    calc_portfolio_var(annual_returns)
+    # calculate equal weighted sharpe ratio
+    eql_sharpe = sharpe_ratio(annual_returns)
+    # optimize our portfolio
+    opt_weight = optimize_portfolio(annual_returns, 0.0003)
+    
+    ###### Efficient Frontier ######
+    # calculate our frontier
+    frontier_data = calc_efficient_frontier(annual_returns)
+    plot_efficient_frontier(frontier_data)
+
+
+    ############ Fund ############
+    fund_df = read_data().iloc[:,10:20]
     # Calculate the Annual Return of All Funds
     annual_fund_return = calc_annual_returns(fund_df)
     # calculate our portfolio variance (equal weighted)
@@ -135,17 +173,10 @@ if __name__ == '__main__':
     # calculate equal weighted sharpe ratio
     eql_sharpe = sharpe_ratio(annual_fund_return)
     # optimize our portfolio
-    opt_weight = optimize_portfolio(annual_fund_return.iloc[:,:5], 0.0003)
+    opt_weight = optimize_portfolio(annual_fund_return, 0.0003)
     
-    # calc_portfolio_var(annual_fund_return.iloc[:,:5])
-    '''
-    n = 5
-    weights = np.ones(n)/n
-    # negative_sharpe_ratio(weights,annual_fund_return.iloc[:,:5],0.0003)
-    returns = annual_fund_return.iloc[:,:5]
-    
-    
-    
-    w1 = scopt.minimize(negative_sharpe_ratio, 
-                weights, args=(returns, 0.0002)).x
-    '''
+    ###### Efficient Frontier ######
+    # calculate our frontier
+    frontier_fund_data = calc_efficient_frontier(annual_fund_return)
+    plot_efficient_frontier(frontier_fund_data)
+
