@@ -147,6 +147,10 @@ def plot_efficient_frontier(frontier_data):
     plt.plot(frontier_data['Stds'], frontier_data['Means'], '--'); 
     plt.savefig('5104OS_09_20.png', bbox_inches='tight', dpi=300)
     
+    
+ 
+    
+
 if __name__ == '__main__':
     portfolio = create_portfolio(['StockA', 'Stock B'],[1,1])
     
