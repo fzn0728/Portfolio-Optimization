@@ -78,14 +78,15 @@ def optimize_portfolio(returns, risk_free_rate):
     w0 = np.ones(returns.columns.size, 
                  dtype=float) * 1.0 / returns.columns.size
     # minimize the negative sharpe value
-    constraints = ({'type': 'ineq', 'fun': lambda w0: w0[0]+w0[1]-0.2},
+    constraints = ({'type': 'ineq', 'fun': lambda w0: w0[0]+w0[1]-0.05},
+                   {'type': 'ineq', 'fun': lambda w0: 0.3-w0[0]+w0[1]},
                    {'type': 'eq', 'fun': lambda w0: 1-np.sum(w0)})
-    bounds=((0.05,0.2),(0.05,0.2),(0.05,0.2),(0.05,0.2),(0.05,0.2),\
+    bounds=((0,0.3),(0,0.3),(0.05,0.2),(0.05,0.2),(0.05,0.2),\
             (0.05,0.2),(0.05,0.2),(0.05,0.2),(0.05,0.2),(0.05,0.2))
     w1 = scopt.minimize(negative_sharpe_ratio, 
                     w0, args=(returns, risk_free_rate),
                     method='SLSQP', constraints = constraints,
-                    bounds = bounds).x
+                    bounds = bounds, options={'disp':True}).x
     print('Reach to the last step: ')
     print('The final w1 is ' + str(w1))
     # and calculate the final, optimized, sharpe ratio
@@ -132,7 +133,6 @@ def calc_efficient_frontier(returns):
             'Stds': result_stds, 
             'Weights': result_weights}
             
-           
 def plot_efficient_frontier(frontier_data):
     plt.figure(figsize=(12,8))
     plt.title('Efficient Frontier')
@@ -149,19 +149,21 @@ if __name__ == '__main__':
     daily_returns = calc_daily_returns(closes)
     # calculate annual returns
     annual_returns = calc_annual_returns(daily_returns)
-    
-    
     # calculate our portfolio variance (equal weighted)
     calc_portfolio_var(annual_returns)
     # calculate equal weighted sharpe ratio
     eql_sharpe = sharpe_ratio(annual_returns)
     # optimize our portfolio
     opt_weight = optimize_portfolio(annual_returns, 0.0003)
-    
     ###### Efficient Frontier ######
     # calculate our frontier
-    frontier_data = calc_efficient_frontier(annual_returns)
-    plot_efficient_frontier(frontier_data)
+    ## frontier_data = calc_efficient_frontier(annual_returns)
+    ## plot_efficient_frontier(frontier_data)
+    
+    
+    ############ Stock with Daily Data ############
+    opt_weight_d, final_sharpe_d = optimize_portfolio(daily_returns[1:], 0.0003/252)
+    annual_fund_sharpe_d = np.sqrt(252)*final_sharpe_d
 
 
     ############ Fund ############
@@ -171,12 +173,15 @@ if __name__ == '__main__':
     # calculate our portfolio variance (equal weighted)
     calc_portfolio_var(annual_fund_return)
     # calculate equal weighted sharpe ratio
-    eql_sharpe = sharpe_ratio(annual_fund_return)
+    eql_fund_sharpe = sharpe_ratio(annual_fund_return)
     # optimize our portfolio
-    opt_weight = optimize_portfolio(annual_fund_return, 0.0003)
-    
+    opt_fund_weight = optimize_portfolio(annual_fund_return, 0.0003)
     ###### Efficient Frontier ######
     # calculate our frontier
-    frontier_fund_data = calc_efficient_frontier(annual_fund_return)
-    plot_efficient_frontier(frontier_fund_data)
-
+    ## frontier_fund_data = calc_efficient_frontier(annual_fund_return)
+    ## plot_efficient_frontier(frontier_fund_data)
+    
+    
+    ############ Fund with Monthly Data ############
+    opt_fund_weight_m, final_sharpe = optimize_portfolio(fund_df, 0.0003/12)
+    annual_fund_sharpe_m = np.sqrt(12)*final_sharpe
